@@ -75,19 +75,25 @@ client.on("messageCreate", async (message) => {
   const displayName = message.member?.displayName || message.author.displayName || message.author.username;
   console.log(`📨 收到訊息：${content}（顯示名稱：${displayName}）`);
 
+  // ✅ 新增：回覆 OK 且為任務提醒格式，也觸發刪除
   if (content.toLowerCase() === "ok") {
     console.log(`✅ 檢測到 OK 回覆`);
     let task = null;
     if (message.reference && message.reference.messageId) {
-      task = notificationTasks.get(message.reference.messageId);
-      console.log(`ℹ️ 檢查引用訊息 ID：${message.reference.messageId}, 任務：${JSON.stringify(task)}`);
+      const original = await message.channel.messages.fetch(message.reference.messageId);
+      const text = original.content || original.embeds?.[0]?.description || "";
+      const matched = text.match(/事項：「(.+?)」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2}):\d{2}/);
+      if (matched) {
+        const [, taskContent, date, time] = matched;
+        task = { content: taskContent, date, time };
+        console.log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
+      }
     } else if (lastNotification) {
       task = lastNotification.task;
       console.log(`ℹ️ 無引用，使用最近通知：${JSON.stringify(task)}`);
     }
 
     if (task) {
-      console.log(`✅ 找到 OK 回覆的任務：${JSON.stringify(task)}`);
       const response = await sendToGAS({
         type: "complete",
         date: task.date,
@@ -121,7 +127,6 @@ client.on("messageCreate", async (message) => {
   }
 
   taskContent = content.slice(prefixLength).trim();
-  // 處理 Discord 提及和純文字 @名稱
   let cleanedContent = taskContent;
   let executor = null;
   const mentionMatch = taskContent.match(/<@!?(\d+)>/);
@@ -150,7 +155,7 @@ client.on("messageCreate", async (message) => {
     type: "task",
     content: cleanedContent,
     username: displayName,
-    executor: executor || displayName, // 若無執行者，使用發送者顯示名稱
+    executor: executor || displayName,
     repeatReminder,
     reminderOffset,
     originalContent: content
@@ -182,9 +187,20 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 
   console.log(`✅ 檢測到 👍 反應，訊息 ID：${message.id}`);
-  const task = notificationTasks.get(message.id);
+  let task = notificationTasks.get(message.id);
+
+  // 若找不到記錄中的任務，試圖從訊息內容擷取
+  if (!task) {
+    const text = message.content || message.embeds?.[0]?.description || "";
+    const matched = text.match(/事項：「(.+?)」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2}):\d{2}/);
+    if (matched) {
+      const [, taskContent, date, time] = matched;
+      task = { content: taskContent, date, time };
+      console.log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
+    }
+  }
+
   if (task) {
-    console.log(`✅ 找到反應的任務：${JSON.stringify(task)}`);
     const response = await sendToGAS({
       type: "complete",
       date: task.date,
@@ -203,5 +219,5 @@ app.get("/", (req, res) => res.send("🤖 Bot is alive!"));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 KeepAlive server running on port ${PORT}`));
 
-
 client.login(botToken);
+
