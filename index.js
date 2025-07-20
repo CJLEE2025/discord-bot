@@ -82,10 +82,10 @@ client.on("messageCreate", async (message) => {
     if (message.reference && message.reference.messageId) {
       const original = await message.channel.messages.fetch(message.reference.messageId);
       const text = original.content || original.embeds?.[0]?.description || "";
-      const matched = text.match(/事項：「(.+?)」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2}):\d{2}/);
+      const matched = text.match(/事項[：:]\s*「?([^」]+)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
       if (matched) {
         const [, taskContent, date, time] = matched;
-        task = { content: taskContent, date, time };
+        task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
         console.log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
       }
     } else if (lastNotification) {
@@ -102,6 +102,9 @@ client.on("messageCreate", async (message) => {
         username: displayName
       });
       console.log(`✅ 完成請求回應：${JSON.stringify(response)}`);
+      if (response && response.status !== "OK") {
+        await message.channel.send(`⚠️ 無法刪除任務：${task.content} (${task.date} ${task.time})，請檢查試算表。`);
+      }
     } else {
       console.log(`❌ 未找到匹配的任務`);
     }
@@ -153,12 +156,14 @@ client.on("messageCreate", async (message) => {
     }
   }
 
-  console.log(`✅ 清理後內容：${cleanedContent}, 執行者：${executor || "未指定"}`);
+  // 預設執行者為「值班人員」
+  executor = executor || "值班人員";
+  console.log(`✅ 清理後內容：${cleanedContent}, 執行者：${executor}`);
   const response = await sendToGAS({
     type: "task",
     content: cleanedContent,
     username: displayName,
-    executor: executor || displayName,
+    executor: executor,
     repeatReminder,
     reminderOffset,
     originalContent: content
@@ -190,7 +195,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
     console.log(`🔍 嘗試解析訊息內容：${text}`);
-    // 修改正則以更穩健地捕獲任務內容
     const matched = text.match(/事項[：:]\s*「?([^」]+)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
     if (matched) {
       const [, taskContent, date, time] = matched;
@@ -221,7 +225,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
 const app = express();
 app.get("/", (req, res) => res.send("🤖 Bot is alive!"));
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => console.log(`🌐 KeepAlive server running on port ${PORT}`));
 
 client.login(botToken);
