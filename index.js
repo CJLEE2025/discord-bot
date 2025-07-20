@@ -189,10 +189,12 @@ client.on("messageReactionAdd", async (reaction, user) => {
   let task = notificationTasks.get(message.id);
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
-    const matched = text.match(/事項[：:]\s*「?(.+?)」?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+    console.log(`🔍 嘗試解析訊息內容：${text}`);
+    // 修改正則以更穩健地捕獲任務內容
+    const matched = text.match(/事項[：:]\s*「?([^」]+)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
     if (matched) {
       const [, taskContent, date, time] = matched;
-      task = { content: taskContent, date, time: time.slice(0, 5) };
+      task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
       console.log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
     } else {
       console.log(`⚠️ 訊息格式無法解析：${text}`);
@@ -208,6 +210,9 @@ client.on("messageReactionAdd", async (reaction, user) => {
       username: user.displayName || user.username
     });
     console.log(`✅ 完成請求回應：${JSON.stringify(response)}`);
+    if (response && response.status !== "OK") {
+      await message.channel.send(`⚠️ 無法刪除任務：${task.content} (${task.date} ${task.time})，請檢查試算表。`);
+    }
   } else {
     console.log(`❌ 未找到匹配的任務，訊息 ID：${message.id}`);
     await message.channel.send(`⚠️ 無法識別任務，請確認訊息格式是否正確。`);
