@@ -65,50 +65,48 @@ client.once("ready", () => {
   console.log(`🤖 Bot 上線：${client.user.tag}`);
 });
 
-client.on("messageReactionAdd", async (reaction, user) => {
-  if (user.bot || reaction.message.channelId !== "1371833091378909295") {
-    console.log(`⏩ 忽略反應：Bot=${user.bot}, 頻道ID=${reaction.message.channelId}`);
-    return;
-  }
-  if (reaction.emoji.name !== "👍") {
-    console.log(`⏩ 忽略非 👍 反應：${reaction.emoji.name}`);
+client.on("messageCreate", async (message) => {
+  if (message.author.bot || message.channelId !== "1371833091378909295") {
+    console.log(`⏩ 忽略訊息：Bot=${message.author.bot}, 頻道ID=${message.channelId}`);
     return;
   }
 
-  const message = reaction.message.partial ? await reaction.message.fetch() : reaction.message;
-  console.log(`✅ 檢測到 👍 反應，訊息 ID：${message.id}`);
+  const content = message.content || "";
+  const displayName = message.member?.displayName || message.author.displayName || message.author.username;
+  console.log(`📨 收到訊息：${content}（顯示名稱：${displayName}）`);
 
-  // 嘗試從 notificationTasks 獲取任務
-  let task = notificationTasks.get(message.id);
-
-  // 若無記錄，嘗試從訊息內容解析任務
-  if (!task) {
-    const text = message.content || message.embeds?.[0]?.description || "";
-    // 修改正則以更靈活匹配任務格式
-    const matched = text.match(/事項[：:]\s*「?(.+?)」?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
-    if (matched) {
-      const [, taskContent, date, time] = matched;
-      task = { content: taskContent, date, time: time.slice(0, 5) }; // 確保時間格式為 hh:mm
-      console.log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
-    } else {
-      console.log(`⚠️ 訊息格式無法解析：${text}`);
+  // 處理 OK 回覆
+  if (content.toLowerCase() === "ok") {
+    console.log(`✅ 檢測到 OK 回覆`);
+    let task = null;
+    if (message.reference && message.reference.messageId) {
+      const original = await message.channel.messages.fetch(message.reference.messageId);
+      const text = original.content || original.embeds?.[0]?.description || "";
+      const matched = text.match(/事項：「(.+?)」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2}):\d{2}/);
+      if (matched) {
+        const [, taskContent, date, time] = matched;
+        task = { content: taskContent, date, time };
+        console.log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
+      }
+    } else if (lastNotification) {
+      task = lastNotification.task;
+      console.log(`ℹ️ 無引用，使用最近通知：${JSON.stringify(task)}`);
     }
-  }
 
-  if (task) {
-    const response = await sendToGAS({
-      type: "complete",
-      date: task.date,
-      time: task.time,
-      content: task.content,
-      username: user.displayName || user.username
-    });
-    console.log(`✅ 完成請求回應：${JSON.stringify(response)}`);
-  } else {
-    console.log(`❌ 未找到匹配的任務，訊息 ID：${message.id}`);
-    await message.channel.send(`⚠️ 無法識別任務，請確認訊息格式是否正確。`);
+    if (task) {
+      const response = await sendToGAS({
+        type: "complete",
+        date: task.date,
+        time: task.time,
+        content: task.content,
+        username: displayName
+      });
+      console.log(`✅ 完成請求回應：${JSON.stringify(response)}`);
+    } else {
+      console.log(`❌ 未找到匹配的任務`);
+    }
+    return;
   }
-});
 
   if (!content.toLowerCase().startsWith(prefix.toLowerCase())) {
     console.log("⏩ 忽略：不是 AA 開頭的訊息");
@@ -131,6 +129,8 @@ client.on("messageReactionAdd", async (reaction, user) => {
   taskContent = content.slice(prefixLength).trim();
   let cleanedContent = taskContent;
   let executor = null;
+
+  // 處理提及 (@user)
   const mentionMatch = taskContent.match(/<@!?(\d+)>/);
   if (mentionMatch) {
     const userId = mentionMatch[1];
@@ -144,6 +144,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
       cleanedContent = taskContent.replace(/<@!?\d+>/g, "").trim();
     }
   } else {
+    // 處理純文字 @username
     const atMatch = taskContent.match(/@([^\s<@>]+)/);
     if (atMatch) {
       executor = atMatch[1].trim();
@@ -183,22 +184,18 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 
   const message = reaction.message.partial ? await reaction.message.fetch() : reaction.message;
-  if (message.author.id !== client.user.id) {
-    console.log(`⏩ 忽略非 Bot 訊息：作者=${message.author.id}`);
-    return;
-  }
-
   console.log(`✅ 檢測到 👍 反應，訊息 ID：${message.id}`);
-  let task = notificationTasks.get(message.id);
 
-  // 若找不到記錄中的任務，試圖從訊息內容擷取
+  let task = notificationTasks.get(message.id);
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
-    const matched = text.match(/事項：「(.+?)」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2}):\d{2}/);
+    const matched = text.match(/事項[：:]\s*「?(.+?)」?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
     if (matched) {
       const [, taskContent, date, time] = matched;
-      task = { content: taskContent, date, time };
+      task = { content: taskContent, date, time: time.slice(0, 5) };
       console.log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
+    } else {
+      console.log(`⚠️ 訊息格式無法解析：${text}`);
     }
   }
 
@@ -213,6 +210,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
     console.log(`✅ 完成請求回應：${JSON.stringify(response)}`);
   } else {
     console.log(`❌ 未找到匹配的任務，訊息 ID：${message.id}`);
+    await message.channel.send(`⚠️ 無法識別任務，請確認訊息格式是否正確。`);
   }
 });
 
@@ -222,4 +220,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 KeepAlive server running on port ${PORT}`));
 
 client.login(botToken);
-
