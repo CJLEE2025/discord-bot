@@ -15,7 +15,7 @@ const client = new Client({
 const prefix = "AA";
 const gasWebhookUrl = process.env.GAS_WEBHOOK_URL;
 const botToken = process.env.DISCORD_BOT_TOKEN;
-const DEBUG_ENABLED = process.env.DEBUG_ENABLED === "true";
+const DEBUG_ENABLED = process.env.DEBUG_ENABLED !== "false"; // 預設啟用 debug
 
 function log(...args) {
   if (DEBUG_ENABLED) {
@@ -91,7 +91,7 @@ client.on("messageCreate", async (message) => {
     if (message.reference && message.reference.messageId) {
       const original = await message.channel.messages.fetch(message.reference.messageId);
       const text = original.content || original.embeds?.[0]?.description || "";
-      const matched = text.match(/事項[：:]\s*「?([^」]+?)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+      const matched = text.match(/事項[：:]\s*「?(.+?)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
       if (matched) {
         const [, taskContent, date, time] = matched;
         task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
@@ -199,12 +199,13 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
   const message = reaction.message.partial ? await reaction.message.fetch() : reaction.message;
   log(`✅ 檢測到 👍 反應，訊息 ID：${message.id}`);
+  log(`🔍 完整訊息內容：${JSON.stringify(message.embeds?.[0] || message.content)}`);
 
   let task = notificationTasks.get(message.id);
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
     log(`🔍 嘗試解析訊息內容：${text}`);
-    const matched = text.match(/事項[：:]\s*「?([^」]+?)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+    const matched = text.match(/事項[：:]\s*「?(.+?)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
     if (matched) {
       const [, taskContent, date, time] = matched;
       task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
