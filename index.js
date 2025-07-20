@@ -50,7 +50,7 @@ async function sendNotification(channel, message, taskDetails = null) {
     const sentMessage = await channel.send({ embeds: [embed] });
     console.log(`✅ 發送通知，訊息 ID：${sentMessage.id}`);
     if (taskDetails) {
-      notificationTasks.set(sentMessage.id, taskDetails);
+      notificationTasks.set(sentMessage.id, taskក);
       lastNotification = { messageId: sentMessage.id, task: taskDetails };
       console.log(`✅ 儲存任務到 notificationTasks：${JSON.stringify(taskDetails)}`);
     }
@@ -195,7 +195,8 @@ client.on("messageReactionAdd", async (reaction, user) => {
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
     console.log(`🔍 嘗試解析訊息內容：${text}`);
-    const matched = text.match(/事項[：:]\s*「?([^」]+)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+    // 修改正則表達式，僅捕獲事項內容，排除備註
+    const matched = text.match(/事項[：:]\s*「?([^」]+?)(?:\s*\（備註：[^\)]+\))?」(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
     if (matched) {
       const [, taskContent, date, time] = matched;
       task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
