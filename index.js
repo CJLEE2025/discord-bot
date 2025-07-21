@@ -25,7 +25,7 @@ function log(...args) {
 
 const notificationTasks = new Map();
 let lastNotification = null;
-const sentMessages = new Set(); // 儲存已發送的通知訊息內容
+const sentMessages = new Set();
 
 console.log("🚀 開始執行 index.js");
 
@@ -50,8 +50,7 @@ async function sendToGAS(payload) {
 }
 
 async function sendNotification(channel, message, taskDetails = null) {
-  // 檢查是否已發送相同訊息
-  const messageKey = `${message}:${taskDetails?.date}:${taskDetails?.time}`;
+  const messageKey = `${message}:${taskDetails?.date}:${taskDetails?.time}:${new Date().getTime()}`;
   if (sentMessages.has(messageKey)) {
     log(`⏩ 忽略重複通知：${messageKey}`);
     return null;
@@ -65,11 +64,10 @@ async function sendNotification(channel, message, taskDetails = null) {
     };
     const sentMessage = await channel.send({ embeds: [embed] });
     log(`✅ 發送通知，訊息 ID：${sentMessage.id}`);
-    sentMessages.add(messageKey); // 記錄已發送訊息
+    sentMessages.add(messageKey);
     if (taskDetails) {
       notificationTasks.set(sentMessage.id, taskDetails);
       lastNotification = { messageId: sentMessage.id, task: taskDetails };
-      log(`✅ 儲存任務到 notificationTasks：${JSON.stringify(taskDetails)}`);
     }
     return sentMessage.id;
   } catch (err) {
@@ -92,14 +90,12 @@ client.on("messageCreate", async (message) => {
   const displayName = message.member?.displayName || message.author.displayName || message.author.username;
   log(`📨 收到訊息：${content}（顯示名稱：${displayName}）`);
 
-  // 處理 OK 回覆
   if (content.toLowerCase() === "ok") {
-    log(`✅ 檢測到 OK 回覆`);
     let task = null;
     if (message.reference && message.reference.messageId) {
       const original = await message.channel.messages.fetch(message.reference.messageId);
       const text = original.content || original.embeds?.[0]?.description || "";
-      const matched = text.match(/事項[：:]\s*「([^」]+)」(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+      const matched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
       if (matched) {
         const [, taskContent, date, time] = matched;
         task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
@@ -122,8 +118,6 @@ client.on("messageCreate", async (message) => {
       if (response && response.status !== "OK") {
         await message.channel.send(`⚠️ 無法刪除任務：${task.content} (${task.date} ${task.time})，請檢查試算表。`);
       }
-    } else {
-      log(`❌ 未找到匹配的任務`);
     }
     return;
   }
@@ -156,7 +150,6 @@ client.on("messageCreate", async (message) => {
     try {
       const user = await message.guild.members.fetch(userId);
       executor = user.displayName || user.user.username;
-      log(`✅ 提取提及的使用者顯示名稱：${executor}`);
       cleanedContent = taskContent.replace(/<@!?\d+>/g, "").trim();
     } catch (err) {
       console.error(`❌ 無法獲取使用者 ${userId} 的顯示名稱：${err.message}`);
@@ -166,7 +159,6 @@ client.on("messageCreate", async (message) => {
     const atMatch = taskContent.match(/@([^\s<@>]+)/);
     if (atMatch) {
       executor = atMatch[1].trim();
-      log(`✅ 提取純文字執行者：${executor}`);
       cleanedContent = taskContent.replace(/@[^\s<@>]+/, "").trim();
     }
   }
@@ -210,7 +202,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
     log(`🔍 嘗試解析訊息內容：${text}`);
-    const matched = text.match(/事項[：:]\s*「([^」]+)」(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+    const matched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
     if (matched) {
       const [, taskContent, date, time] = matched;
       task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
