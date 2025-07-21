@@ -15,7 +15,7 @@ const client = new Client({
 const prefix = "AA";
 const gasWebhookUrl = process.env.GAS_WEBHOOK_URL;
 const botToken = process.env.DISCORD_BOT_TOKEN;
-const DEBUG_ENABLED = process.env.DEBUG_ENABLED !== "false"; // 預設啟用 debug
+const DEBUG_ENABLED = process.env.DEBUG_ENABLED !== "false";
 
 function log(...args) {
   if (DEBUG_ENABLED) {
@@ -25,6 +25,7 @@ function log(...args) {
 
 const notificationTasks = new Map();
 let lastNotification = null;
+const sentMessages = new Set(); // 儲存已發送的通知訊息內容
 
 console.log("🚀 開始執行 index.js");
 
@@ -49,6 +50,11 @@ async function sendToGAS(payload) {
 }
 
 async function sendNotification(channel, message, taskDetails = null) {
+  // 檢查是否已發送相同訊息
+  if (sentMessages.has(message)) {
+    log(`⏩ 忽略重複通知：${message}`);
+    return null;
+  }
   try {
     const embed = {
       title: "待辦事項通知",
@@ -58,6 +64,7 @@ async function sendNotification(channel, message, taskDetails = null) {
     };
     const sentMessage = await channel.send({ embeds: [embed] });
     log(`✅ 發送通知，訊息 ID：${sentMessage.id}`);
+    sentMessages.add(message); // 記錄已發送訊息
     if (taskDetails) {
       notificationTasks.set(sentMessage.id, taskDetails);
       lastNotification = { messageId: sentMessage.id, task: taskDetails };
@@ -91,7 +98,7 @@ client.on("messageCreate", async (message) => {
     if (message.reference && message.reference.messageId) {
       const original = await message.channel.messages.fetch(message.reference.messageId);
       const text = original.content || original.embeds?.[0]?.description || "";
-      const matched = text.match(/事項[：:]\s*「?(.+?)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+      const matched = text.match(/事項[：:]\s*「?([^」]+)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
       if (matched) {
         const [, taskContent, date, time] = matched;
         task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
@@ -142,7 +149,6 @@ client.on("messageCreate", async (message) => {
   let cleanedContent = taskContent;
   let executor = null;
 
-  // 處理提及 (@user)
   const mentionMatch = taskContent.match(/<@!?(\d+)>/);
   if (mentionMatch) {
     const userId = mentionMatch[1];
@@ -156,7 +162,6 @@ client.on("messageCreate", async (message) => {
       cleanedContent = taskContent.replace(/<@!?\d+>/g, "").trim();
     }
   } else {
-    // 處理純文字 @username
     const atMatch = taskContent.match(/@([^\s<@>]+)/);
     if (atMatch) {
       executor = atMatch[1].trim();
@@ -165,7 +170,6 @@ client.on("messageCreate", async (message) => {
     }
   }
 
-  // 預設執行者為「值班人員」
   executor = executor || "值班人員";
   log(`✅ 清理後內容：${cleanedContent}, 執行者：${executor}`);
   const response = await sendToGAS({
@@ -205,7 +209,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
     log(`🔍 嘗試解析訊息內容：${text}`);
-    const matched = text.match(/事項[：:]\s*「?(.+?)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+    const matched = text.match(/事項[：:]\s*「?([^」]+)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
     if (matched) {
       const [, taskContent, date, time] = matched;
       task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
