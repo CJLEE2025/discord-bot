@@ -195,8 +195,13 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 
   const message = reaction.message.partial ? await reaction.message.fetch() : reaction.message;
-  log(`✅ 檢測到 👍 反應，訊息 ID：${message.id}`);
-  log(`🔍 完整訊息內容：${JSON.stringify(message.embeds?.[0] || message.content)}`);
+  const users = await reaction.users.fetch();
+  if (users.has(user.id)) {
+    log(`✅ 檢測到 👍 反應，訊息 ID：${message.id}, 使用者：${user.displayName || user.username}`);
+  } else {
+    log(`⏩ 忽略已處理的反應，訊息 ID：${message.id}`);
+    return;
+  }
 
   let task = notificationTasks.get(message.id);
   if (!task) {
@@ -213,16 +218,20 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 
   if (task) {
+    const cleanContent = task.content.replace(/（備註：[^）]+）$/, "").trim();
     const response = await sendToGAS({
       type: "complete",
       date: task.date,
       time: task.time,
-      content: task.content,
+      content: cleanContent,
       username: user.displayName || user.username
     });
     log(`✅ 完成請求回應：${JSON.stringify(response)}`);
     if (response && response.status !== "OK") {
-      await message.channel.send(`⚠️ 無法刪除任務：${task.content} (${task.date} ${task.time})，請檢查試算表。`);
+      await message.channel.send(`⚠️ 無法刪除任務：${cleanContent} (${task.date} ${task.time})，請檢查試算表。`);
+    } else {
+      notificationTasks.delete(message.id);
+      sentMessages.delete(`${message.embeds?.[0]?.description || message.content}:${task.date}:${task.time}:${new Date().getTime()}`);
     }
   } else {
     log(`❌ 未找到匹配的任務，訊息 ID：${message.id}`);
