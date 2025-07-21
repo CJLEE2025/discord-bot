@@ -51,8 +51,9 @@ async function sendToGAS(payload) {
 
 async function sendNotification(channel, message, taskDetails = null) {
   // 檢查是否已發送相同訊息
-  if (sentMessages.has(message)) {
-    log(`⏩ 忽略重複通知：${message}`);
+  const messageKey = `${message}:${taskDetails?.date}:${taskDetails?.time}`;
+  if (sentMessages.has(messageKey)) {
+    log(`⏩ 忽略重複通知：${messageKey}`);
     return null;
   }
   try {
@@ -64,7 +65,7 @@ async function sendNotification(channel, message, taskDetails = null) {
     };
     const sentMessage = await channel.send({ embeds: [embed] });
     log(`✅ 發送通知，訊息 ID：${sentMessage.id}`);
-    sentMessages.add(message); // 記錄已發送訊息
+    sentMessages.add(messageKey); // 記錄已發送訊息
     if (taskDetails) {
       notificationTasks.set(sentMessage.id, taskDetails);
       lastNotification = { messageId: sentMessage.id, task: taskDetails };
@@ -98,7 +99,7 @@ client.on("messageCreate", async (message) => {
     if (message.reference && message.reference.messageId) {
       const original = await message.channel.messages.fetch(message.reference.messageId);
       const text = original.content || original.embeds?.[0]?.description || "";
-      const matched = text.match(/事項[：:]\s*「?([^」]+)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+      const matched = text.match(/事項[：:]\s*「([^」]+)」(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
       if (matched) {
         const [, taskContent, date, time] = matched;
         task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
@@ -209,7 +210,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
     log(`🔍 嘗試解析訊息內容：${text}`);
-    const matched = text.match(/事項[：:]\s*「?([^」]+)」?(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+    const matched = text.match(/事項[：:]\s*「([^」]+)」(?:\s*\（備註：[^\)]+\))?.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
     if (matched) {
       const [, taskContent, date, time] = matched;
       task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
