@@ -34,7 +34,7 @@ async function sendToGAS(payload) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       log(`📤 發送 GAS 請求（第 ${attempt} 次）：${JSON.stringify(payload)}`);
-      const response = await axios.post(gasWebhookUrl, payload);
+      const response = await axios.post(gasWebhookUrl, { ...payload, debug: false });
       log(`✅ GAS 回應，狀態碼：${response.status}, 數據：${JSON.stringify(response.data)}`);
       return response.data;
     } catch (err) {
@@ -50,7 +50,7 @@ async function sendToGAS(payload) {
 }
 
 async function sendNotification(channel, message, taskDetails = null) {
-  const messageKey = `${message}:${taskDetails?.date}:${taskDetails?.time}:${new Date().getTime()}`;
+  const messageKey = taskDetails ? `${message}:${taskDetails.date}:${taskDetails.time}` : message;
   if (sentMessages.has(messageKey)) {
     log(`⏩ 忽略重複通知：${messageKey}`);
     return null;
@@ -117,7 +117,7 @@ client.on("messageCreate", async (message) => {
       });
       log(`✅ 完成請求回應：${JSON.stringify(response)}`);
       if (response && response.status !== "OK") {
-        await message.channel.send(`⚠️ 無法刪除任務：${cleanContent} (${task.date} ${task.time})，請檢查試算表。`);
+        await message.channel.send(`⚠️ 無法清空任務：${cleanContent} (${task.date} ${task.time})，請檢查試算表。`);
       }
     }
     return;
@@ -229,10 +229,10 @@ client.on("messageReactionAdd", async (reaction, user) => {
     });
     log(`✅ 完成請求回應：${JSON.stringify(response)}`);
     if (response && response.status !== "OK") {
-      await message.channel.send(`⚠️ 無法刪除任務：${cleanContent} (${task.date} ${task.time})，請檢查試算表。`);
+      await message.channel.send(`⚠️ 無法清空任務：${cleanContent} (${task.date} ${task.time})，請檢查試算表。`);
     } else {
       notificationTasks.delete(message.id);
-      sentMessages.delete(`${message.embeds?.[0]?.description || message.content}:${task.date}:${task.time}:${new Date().getTime()}`);
+      sentMessages.delete(`${message.embeds?.[0]?.description || message.content}:${task.date}:${task.time}`);
     }
   } else {
     log(`❌ 未找到匹配的任務，訊息 ID：${message.id}`);
