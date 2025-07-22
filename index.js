@@ -107,16 +107,17 @@ client.on("messageCreate", async (message) => {
     }
 
     if (task) {
+      const cleanContent = task.content.replace(/（備註：[^）]+）$/, "").trim();
       const response = await sendToGAS({
         type: "complete",
         date: task.date,
         time: task.time,
-        content: task.content,
+        content: cleanContent,
         username: displayName
       });
       log(`✅ 完成請求回應：${JSON.stringify(response)}`);
       if (response && response.status !== "OK") {
-        await message.channel.send(`⚠️ 無法刪除任務：${task.content} (${task.date} ${task.time})，請檢查試算表。`);
+        await message.channel.send(`⚠️ 無法刪除任務：${cleanContent} (${task.date} ${task.time})，請檢查試算表。`);
       }
     }
     return;
