@@ -132,7 +132,7 @@ client.once("ready", () => {
 });
 
 client.on("messageCreate", async (message) => {
-  if (message.author.bot || message.channelId !== "1371833091378909295") {
+  if (message.author.bot || message.channelId !== "1347460222763139154") {
     log(`⏩ 忽略訊息：Bot=${message.author.bot}, 頻道ID=${message.channelId}`);
     return;
   }
@@ -243,7 +243,7 @@ client.on("messageCreate", async (message) => {
 });
 
 client.on("messageReactionAdd", async (reaction, user) => {
-  if (user.bot || reaction.message.channelId !== "1371833091378909295") {
+  if (user.bot || reaction.message.channelId !== "1347460222763139154") {
     log(`⏩ 忽略反應：Bot=${user.bot}, 頻道ID=${reaction.message.channelId}`);
     return;
   }
