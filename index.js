@@ -10,6 +10,8 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessageReactions
   ],
+  // ⭐ 必加：否則 embed 的 reaction 在正式環境會失效
+  partials: ["MESSAGE", "CHANNEL", "REACTION"],
 });
 
 const prefix = "AA";
@@ -56,6 +58,12 @@ async function sendNotification(channel, message, taskDetails = null) {
     return null;
   }
   try {
+    // ⭐ 移除 🆔 行（只影響顯示，不影響邏輯）
+    const cleanedMessage = message
+      .split("\n")
+      .filter(line => !line.trim().startsWith("🆔"))
+      .join("\n");
+    
     const embed = {
       title: "待辦事項通知",
       description: message,
