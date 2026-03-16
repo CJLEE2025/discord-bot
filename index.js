@@ -19,6 +19,9 @@ const gasWebhookUrl = process.env.GAS_WEBHOOK_URL;
 const botToken = process.env.DISCORD_BOT_TOKEN;
 const DEBUG_ENABLED = process.env.DEBUG_ENABLED !== "false";
 
+// ★ 加入可監聽的測試頻道清單 (一般頻道, "扶"開頭頻道)
+const ALLOWED_CHANNELS = ["1455139124326568071", "1371833091378909295"];
+
 function log(...args) {
   if (DEBUG_ENABLED) {
     console.log(...args);
@@ -140,7 +143,8 @@ client.once("ready", () => {
 });
 
 client.on("messageCreate", async (message) => {
-  if (message.author.bot || message.channelId !== "1347460222763139154") {
+  // ★ 更新頻道檢查邏輯
+  if (message.author.bot || !ALLOWED_CHANNELS.includes(message.channelId)) {
     log(`⏩ 忽略訊息：Bot=${message.author.bot}, 頻道ID=${message.channelId}`);
     return;
   }
@@ -251,7 +255,8 @@ client.on("messageCreate", async (message) => {
 });
 
 client.on("messageReactionAdd", async (reaction, user) => {
-  if (user.bot || reaction.message.channelId !== "1347460222763139154") {
+  // ★ 同樣更新這裡的頻道檢查邏輯
+  if (user.bot || !ALLOWED_CHANNELS.includes(reaction.message.channelId)) {
     log(`⏩ 忽略反應：Bot=${user.bot}, 頻道ID=${reaction.message.channelId}`);
     return;
   }
