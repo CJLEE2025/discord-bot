@@ -159,16 +159,28 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  // --- B. 讓 ok 指令看懂新增成功的格式 ---
   if (content.toLowerCase() === "ok") {
     let task = null;
     if (message.reference && message.reference.messageId) {
-      const original = await message.channel.messages.fetch(message.reference.messageId);
-      const text = original.content || original.embeds?.[0]?.description || "";
-      const matched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
-      if (matched) {
-        const [, taskContent, date, time] = matched;
-        task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
-        log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
+      try {
+        const original = await message.channel.messages.fetch(message.reference.messageId);
+        const text = original.content || original.embeds?.[0]?.description || "";
+        
+        const remindMatched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+        const successMatched = text.match(/✅ 已成功新增待辦事項[\s\S]*?📅\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})\s*(\d{2}:\d{2})[\s\S]*?📝\s*([^\n]+)/);
+
+        if (remindMatched) {
+          const [, taskContent, date, time] = remindMatched;
+          task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
+          log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
+        } else if (successMatched) {
+          const [, date, time, taskContent] = successMatched;
+          task = { content: taskContent.trim(), date: date.replace(/-/g, "/"), time: time.slice(0, 5) };
+          log(`✅ 從新增成功格式中擷取任務：${JSON.stringify(task)}`);
+        }
+      } catch (err) {
+        log(`❌ 讀取引用訊息失敗：${err.message}`);
       }
     } else if (lastNotification) {
       task = lastNotification.task;
@@ -245,9 +257,13 @@ client.on("messageCreate", async (message) => {
     originalContent: content
   });
 
+  // --- A. 修復 split 錯誤 ---
   if (response && response.status === "OK" && response.taskDetails) {
     log(`✅ 收到 GAS 任務詳情：${JSON.stringify(response.taskDetails)}`);
-    await sendNotification(message.channel, response.message, response.taskDetails);
+    // GAS 已經透過 webhook 發送通知了，若無特別的 message 就不重複發送
+    if (response.message) {
+      await sendNotification(message.channel, response.message, response.taskDetails);
+    }
   } else {
     log(`❌ GAS 回應無效或任務寫入失敗：${JSON.stringify(response)}`);
     await sendNotification(message.channel, `⚠️ 任務新增失敗：${taskContent}\n請檢查試算表或輸入格式。`);
@@ -274,17 +290,25 @@ client.on("messageReactionAdd", async (reaction, user) => {
     return;
   }
 
+  // --- C. 讓按讚功能看懂新增成功的格式 ---
   let task = notificationTasks.get(message.id);
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
     log(`🔍 嘗試解析訊息內容：${text}`);
-    const matched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
-    if (matched) {
-      const [, taskContent, date, time] = matched;
+    
+    const remindMatched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+    const successMatched = text.match(/✅ 已成功新增待辦事項[\s\S]*?📅\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})\s*(\d{2}:\d{2})[\s\S]*?📝\s*([^\n]+)/);
+
+    if (remindMatched) {
+      const [, taskContent, date, time] = remindMatched;
       task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
       log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
+    } else if (successMatched) {
+      const [, date, time, taskContent] = successMatched;
+      task = { content: taskContent.trim(), date: date.replace(/-/g, "/"), time: time.slice(0, 5) };
+      log(`✅ 從新增成功格式中擷取任務：${JSON.stringify(task)}`);
     } else {
-      log(`⚠️ 訊息格式無法解析：${text}`);
+      log(`⚠️ 訊息格式無法解析：\n${text}`);
     }
   }
 
