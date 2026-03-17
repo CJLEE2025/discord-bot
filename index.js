@@ -19,7 +19,7 @@ const gasWebhookUrl = process.env.GAS_WEBHOOK_URL;
 const botToken = process.env.DISCORD_BOT_TOKEN;
 const DEBUG_ENABLED = process.env.DEBUG_ENABLED !== "false";
 
-// ★ 加入可監聽的測試頻道清單 (一般頻道, "扶"開頭頻道)
+// ★ 加入可監聽的正式頻道清單 (一般頻道, "扶"開頭頻道)
 const ALLOWED_CHANNELS = ["1347460222763139154", "1347457058412171316"];
 
 function log(...args) {
@@ -55,6 +55,9 @@ async function sendToGAS(payload) {
 }
 
 async function sendNotification(channel, message, taskDetails = null) {
+  // 🛡️ 終極防呆：如果 message 為空，直接跳出，避免發生 split 錯誤
+  if (!message) return null;
+
   const messageKey = taskDetails ? `${message}:${taskDetails.date}:${taskDetails.time}` : message;
   if (sentMessages.has(messageKey)) {
     log(`⏩ 忽略重複通知：${messageKey}`);
@@ -69,7 +72,7 @@ async function sendNotification(channel, message, taskDetails = null) {
     
     const embed = {
       title: "待辦事項通知",
-      description: message,
+      description: cleanedMessage,
       color: 0x00ff00,
       timestamp: new Date().toISOString()
     };
@@ -153,7 +156,7 @@ client.once("ready", () => {
 });
 
 client.on("messageCreate", async (message) => {
-  // ★ 更新頻道檢查邏輯
+  // ★ 頻道檢查邏輯
   if (message.author.bot || !ALLOWED_CHANNELS.includes(message.channelId)) {
     log(`⏩ 忽略訊息：Bot=${message.author.bot}, 頻道ID=${message.channelId}`);
     return;
@@ -177,12 +180,14 @@ client.on("messageCreate", async (message) => {
         const original = await message.channel.messages.fetch(message.reference.messageId);
         const text = original.content || original.embeds?.[0]?.description || "";
         
-        const remindMatched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
-        const successMatched = text.match(/✅ 已成功新增待辦事項[\s\S]*?📅\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})\s*(\d{2}:\d{2})[\s\S]*?📝\s*([^\n]+)/);
+        // 抓取提醒事項
+        const remindMatched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s*(\d{2}:\d{2})/);
+        // 抓取新增成功事項 (繞過標題，直接鎖定 📅 與 📝)
+        const successMatched = text.match(/📅\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s*(\d{2}:\d{2})[\s\S]*?📝\s*([^\n\r]+)/);
 
         if (remindMatched) {
           const [, taskContent, date, time] = remindMatched;
-          task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
+          task = { content: taskContent.trim(), date: date.replace(/-/g, "/"), time: time.slice(0, 5) };
           log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
         } else if (successMatched) {
           const [, date, time, taskContent] = successMatched;
@@ -267,13 +272,10 @@ client.on("messageCreate", async (message) => {
     originalContent: content
   });
 
-  // --- A. 修復 split 錯誤 ---
+  // --- A. 修復 split 錯誤（完全交由 Webhook 發送成功通知） ---
   if (response && response.status === "OK" && response.taskDetails) {
     log(`✅ 收到 GAS 任務詳情：${JSON.stringify(response.taskDetails)}`);
-    // GAS 已經透過 webhook 發送通知了，若無特別的 message 就不重複發送
-    if (response.message) {
-      await sendNotification(message.channel, response.message, response.taskDetails);
-    }
+    // ⚠️ 這裡完全不呼叫 sendNotification，因為 GAS 的 Webhook 已經會幫我們發送了！
   } else {
     log(`❌ GAS 回應無效或任務寫入失敗：${JSON.stringify(response)}`);
     await sendNotification(message.channel, `⚠️ 任務新增失敗：${taskContent}\n請檢查試算表或輸入格式。`);
@@ -281,7 +283,7 @@ client.on("messageCreate", async (message) => {
 });
 
 client.on("messageReactionAdd", async (reaction, user) => {
-  // ★ 同樣更新這裡的頻道檢查邏輯
+  // ★ 頻道檢查邏輯
   if (user.bot || !ALLOWED_CHANNELS.includes(reaction.message.channelId)) {
     log(`⏩ 忽略反應：Bot=${user.bot}, 頻道ID=${reaction.message.channelId}`);
     return;
@@ -300,17 +302,16 @@ client.on("messageReactionAdd", async (reaction, user) => {
     return;
   }
 
-  // --- C. 讓按讚功能看懂新增成功的格式 ---
-  // --- B. 讓按讚功能看懂新增成功的格式 (強化版) ---
+  // --- C. 讓按讚功能看懂新增成功的格式 (強化版) ---
   let task = notificationTasks.get(message.id);
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
     log(`🔍 嘗試解析訊息內容：\n${text}`);
     
-    // 抓取提醒事項 (支援備註)
+    // 抓取提醒事項
     const remindMatched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s*(\d{2}:\d{2})/);
-    // 抓取新增成功事項 (繞過標題，直接鎖定 📅 與 📝)
-    const successMatched = text.match(/📅\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s+(\d{2}:\d{2})[\s\S]*?📝\s*([^\n\r]+)/);
+    // 抓取新增成功事項 (直接鎖定 📅 與 📝)
+    const successMatched = text.match(/📅\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s*(\d{2}:\d{2})[\s\S]*?📝\s*([^\n\r]+)/);
 
     if (remindMatched) {
       const [, taskContent, date, time] = remindMatched;
@@ -345,7 +346,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
     log(`❌ 未找到匹配的任務，訊息 ID：${message.id}`);
     await message.channel.send(`⚠️ 無法識別任務，請確認訊息格式是否正確。`);
   }
-}); // messageReactionAdd 結束
+});
 
 client.on("error", (err) => {
   console.error(`❌ Discord 客戶端錯誤：${err.message}`);
