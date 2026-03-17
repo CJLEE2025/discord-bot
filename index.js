@@ -19,6 +19,9 @@ const gasWebhookUrl = process.env.GAS_WEBHOOK_URL;
 const botToken = process.env.DISCORD_BOT_TOKEN;
 const DEBUG_ENABLED = process.env.DEBUG_ENABLED !== "false";
 
+// ★ 加入可監聽的測試頻道清單 (一般頻道, "扶"開頭頻道)
+const ALLOWED_CHANNELS = ["1347460222763139154", "1347457058412171316"];
+
 function log(...args) {
   if (DEBUG_ENABLED) {
     console.log(...args);
@@ -99,6 +102,12 @@ async function sendHelpMessage(channel) {
                  "範例：`AA 2025/08/01 14:00 提交報告 @李小明` → 指定李小明執行。"
         },
         {
+          name: "📌 新增扶輪社提醒任務",
+          value: "用法：`AA <時間> <扶+任務內容> [@執行者]`\n" +
+                 "說明：此通知事項會發佈至<交辦事項-扶輪社>頻道。\n" +
+                 "範例：`AAV 明天上午10點 扶通知會員開會` → 用<扶>開頭即可,也可以用<扶->。"
+        },
+        {
           name: "🔁 AAV - 新增重複提醒任務",
           value: "用法：`AAV <時間> <任務內容> [@執行者]`\n" +
                  "說明：新增重複提醒任務，無提前提醒，每20分鐘提醒一次直到完成(1小時後停止提醒)。\n" +
@@ -116,6 +125,10 @@ async function sendHelpMessage(channel) {
                  "說明：指定任務執行者，支援Discord標籤或文字名稱，名稱一定要與待辦事項裡的人名一致! 若無指定則預設為值班人員。\n" +
                  "範例：`AA @李小明` 今天晚上8點 開會  → 指定李小明為執行者。" 
                  
+        },
+        {
+          name: "注意事項",
+          value: "任務內容不要使用()來註解,要註解請使用[],不然會被程式誤判!"                                 
         },
         {
           name: "✅ 完成任務",
@@ -140,7 +153,8 @@ client.once("ready", () => {
 });
 
 client.on("messageCreate", async (message) => {
-  if (message.author.bot || message.channelId !== "1347460222763139154") {
+  // ★ 更新頻道檢查邏輯
+  if (message.author.bot || !ALLOWED_CHANNELS.includes(message.channelId)) {
     log(`⏩ 忽略訊息：Bot=${message.author.bot}, 頻道ID=${message.channelId}`);
     return;
   }
@@ -155,16 +169,28 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  // --- B. 讓 ok 指令看懂新增成功的格式 ---
   if (content.toLowerCase() === "ok") {
     let task = null;
     if (message.reference && message.reference.messageId) {
-      const original = await message.channel.messages.fetch(message.reference.messageId);
-      const text = original.content || original.embeds?.[0]?.description || "";
-      const matched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
-      if (matched) {
-        const [, taskContent, date, time] = matched;
-        task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
-        log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
+      try {
+        const original = await message.channel.messages.fetch(message.reference.messageId);
+        const text = original.content || original.embeds?.[0]?.description || "";
+        
+        const remindMatched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+        const successMatched = text.match(/✅ 已成功新增待辦事項[\s\S]*?📅\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})\s*(\d{2}:\d{2})[\s\S]*?📝\s*([^\n]+)/);
+
+        if (remindMatched) {
+          const [, taskContent, date, time] = remindMatched;
+          task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
+          log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
+        } else if (successMatched) {
+          const [, date, time, taskContent] = successMatched;
+          task = { content: taskContent.trim(), date: date.replace(/-/g, "/"), time: time.slice(0, 5) };
+          log(`✅ 從新增成功格式中擷取任務：${JSON.stringify(task)}`);
+        }
+      } catch (err) {
+        log(`❌ 讀取引用訊息失敗：${err.message}`);
       }
     } else if (lastNotification) {
       task = lastNotification.task;
@@ -241,9 +267,13 @@ client.on("messageCreate", async (message) => {
     originalContent: content
   });
 
+  // --- A. 修復 split 錯誤 ---
   if (response && response.status === "OK" && response.taskDetails) {
     log(`✅ 收到 GAS 任務詳情：${JSON.stringify(response.taskDetails)}`);
-    await sendNotification(message.channel, response.message, response.taskDetails);
+    // GAS 已經透過 webhook 發送通知了，若無特別的 message 就不重複發送
+    if (response.message) {
+      await sendNotification(message.channel, response.message, response.taskDetails);
+    }
   } else {
     log(`❌ GAS 回應無效或任務寫入失敗：${JSON.stringify(response)}`);
     await sendNotification(message.channel, `⚠️ 任務新增失敗：${taskContent}\n請檢查試算表或輸入格式。`);
@@ -251,7 +281,8 @@ client.on("messageCreate", async (message) => {
 });
 
 client.on("messageReactionAdd", async (reaction, user) => {
-  if (user.bot || reaction.message.channelId !== "1347460222763139154") {
+  // ★ 同樣更新這裡的頻道檢查邏輯
+  if (user.bot || !ALLOWED_CHANNELS.includes(reaction.message.channelId)) {
     log(`⏩ 忽略反應：Bot=${user.bot}, 頻道ID=${reaction.message.channelId}`);
     return;
   }
@@ -269,17 +300,25 @@ client.on("messageReactionAdd", async (reaction, user) => {
     return;
   }
 
+  // --- C. 讓按讚功能看懂新增成功的格式 ---
   let task = notificationTasks.get(message.id);
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
     log(`🔍 嘗試解析訊息內容：${text}`);
-    const matched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
-    if (matched) {
-      const [, taskContent, date, time] = matched;
+    
+    const remindMatched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
+    const successMatched = text.match(/✅ 已成功新增待辦事項[\s\S]*?📅\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})\s*(\d{2}:\d{2})[\s\S]*?📝\s*([^\n]+)/);
+
+    if (remindMatched) {
+      const [, taskContent, date, time] = remindMatched;
       task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
       log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
+    } else if (successMatched) {
+      const [, date, time, taskContent] = successMatched;
+      task = { content: taskContent.trim(), date: date.replace(/-/g, "/"), time: time.slice(0, 5) };
+      log(`✅ 從新增成功格式中擷取任務：${JSON.stringify(task)}`);
     } else {
-      log(`⚠️ 訊息格式無法解析：${text}`);
+      log(`⚠️ 訊息格式無法解析：\n${text}`);
     }
   }
 
