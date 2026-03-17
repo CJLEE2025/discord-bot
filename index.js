@@ -301,24 +301,27 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 
   // --- C. 讓按讚功能看懂新增成功的格式 ---
+  // --- B. 讓按讚功能看懂新增成功的格式 (強化版) ---
   let task = notificationTasks.get(message.id);
   if (!task) {
     const text = message.content || message.embeds?.[0]?.description || "";
-    log(`🔍 嘗試解析訊息內容：${text}`);
+    log(`🔍 嘗試解析訊息內容：\n${text}`);
     
-    const remindMatched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*(\d{2}:\d{2})(:\d{2})?/);
-    const successMatched = text.match(/✅ 已成功新增待辦事項[\s\S]*?📅\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})\s*(\d{2}:\d{2})[\s\S]*?📝\s*([^\n]+)/);
+    // 抓取提醒事項 (支援備註)
+    const remindMatched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s*(\d{2}:\d{2})/);
+    // 抓取新增成功事項 (繞過標題，直接鎖定 📅 與 📝)
+    const successMatched = text.match(/📅\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s+(\d{2}:\d{2})[\s\S]*?📝\s*([^\n\r]+)/);
 
     if (remindMatched) {
       const [, taskContent, date, time] = remindMatched;
-      task = { content: taskContent.trim(), date, time: time.slice(0, 5) };
+      task = { content: taskContent.trim(), date: date.replace(/-/g, "/"), time: time.slice(0, 5) };
       log(`✅ 從提醒格式中擷取任務：${JSON.stringify(task)}`);
     } else if (successMatched) {
       const [, date, time, taskContent] = successMatched;
       task = { content: taskContent.trim(), date: date.replace(/-/g, "/"), time: time.slice(0, 5) };
       log(`✅ 從新增成功格式中擷取任務：${JSON.stringify(task)}`);
     } else {
-      log(`⚠️ 訊息格式無法解析：\n${text}`);
+      log(`⚠️ 訊息格式無法解析`);
     }
   }
 
@@ -342,7 +345,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
     log(`❌ 未找到匹配的任務，訊息 ID：${message.id}`);
     await message.channel.send(`⚠️ 無法識別任務，請確認訊息格式是否正確。`);
   }
-});
+}); // messageReactionAdd 結束
 
 client.on("error", (err) => {
   console.error(`❌ Discord 客戶端錯誤：${err.message}`);
