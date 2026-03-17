@@ -2,6 +2,9 @@ const { Client, GatewayIntentBits } = require("discord.js");
 const express = require("express");
 const axios = require("axios");
 
+// 🌟 加上版本號，方便在 Koyeb log 追蹤是否更新成功
+const BOT_VERSION = "v2.5_雙頻道終極版_20260317";
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -10,7 +13,6 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessageReactions
   ],
-  // ⭐ 必加：否則 embed 的 reaction 在正式環境會失效
   partials: ["MESSAGE", "CHANNEL", "REACTION"],
 });
 
@@ -32,7 +34,8 @@ const notificationTasks = new Map();
 let lastNotification = null;
 const sentMessages = new Set();
 
-console.log("🚀 開始執行 index.js");
+// 🌟 啟動時印出版本號
+console.log(`🚀 開始執行 index.js | 目前程式版本: ${BOT_VERSION}`);
 
 async function sendToGAS(payload) {
   const maxRetries = 3;
@@ -55,8 +58,7 @@ async function sendToGAS(payload) {
 }
 
 async function sendNotification(channel, message, taskDetails = null) {
-  // 🛡️ 終極防呆：如果 message 為空，直接跳出，避免發生 split 錯誤
-  if (!message) return null;
+  if (!message) return null; // 🛡️ 防呆：空訊息直接跳出，徹底消滅 split 錯誤
 
   const messageKey = taskDetails ? `${message}:${taskDetails.date}:${taskDetails.time}` : message;
   if (sentMessages.has(messageKey)) {
@@ -64,7 +66,6 @@ async function sendNotification(channel, message, taskDetails = null) {
     return null;
   }
   try {
-    // ⭐ 移除 🆔 行（只影響顯示，不影響邏輯）
     const cleanedMessage = message
       .split("\n")
       .filter(line => !line.trim().startsWith("🆔"))
@@ -99,35 +100,23 @@ async function sendHelpMessage(channel) {
       fields: [
         {
           name: "📌 AA - 新增單次任務",
-          value: "用法：`AA <時間> <任務內容> [@執行者]`\n" +
-                 "說明：新增一次性任務，無提前提醒。\n" +
-                 "範例：`AA 今天晚上8點 開會` → 單次任務，無提前提醒。\n" +
-                 "範例：`AA 2025/08/01 14:00 提交報告 @李小明` → 指定李小明執行。"
+          value: "用法：`AA <時間> <任務內容> [@執行者]`\n範例：`AA 晚上8點 開會`"
         },
         {
           name: "📌 新增扶輪社提醒任務",
-          value: "用法：`AA <時間> <扶+任務內容> [@執行者]`\n" +
-                 "說明：此通知事項會發佈至<交辦事項-扶輪社>頻道。\n" +
-                 "範例：`AAV 明天上午10點 扶通知會員開會` → 用<扶>開頭即可,也可以用<扶->。"
+          value: "用法：`AA <時間> <扶+任務內容> [@執行者]`\n範例：`AAV 明天上午10點 扶通知會員開會`"
         },
         {
           name: "🔁 AAV - 新增重複提醒任務",
-          value: "用法：`AAV <時間> <任務內容> [@執行者]`\n" +
-                 "說明：新增重複提醒任務，無提前提醒，每20分鐘提醒一次直到完成(1小時後停止提醒)。\n" +
-                 "範例：`AAV 明天上午10點 照會王大頭` → 重複提醒，無提前提醒。"
+          value: "用法：`AAV <時間> <任務內容> [@執行者]`\n範例：`AAV 明天上午10點 照會王大頭`"
         },
         {
           name: "⏰ AAV<數字> - 新增提前提醒的重複任務",
-          value: "用法：`AAV<分鐘數> <時間> <任務內容> [@執行者]`\n" +
-                 "說明：新增重複提醒任務，提前指定分鐘數提醒，每分鐘提醒一次直到完成。\n" +
-                 "範例：`AAV5 2025/08/01 14:00 提交報告` → 提前5分鐘開始重複提醒。"
+          value: "用法：`AAV<分鐘數> <時間> <任務內容> [@執行者]`\n範例：`AAV5 2025/08/01 14:00 提交報告`"
         },
         {
           name: "👤 @指定人員",
-          value: "用法：在任務內容後加上  `@名稱`\n" +
-                 "說明：指定任務執行者，支援Discord標籤或文字名稱，名稱一定要與待辦事項裡的人名一致! 若無指定則預設為值班人員。\n" +
-                 "範例：`AA @李小明` 今天晚上8點 開會  → 指定李小明為執行者。" 
-                 
+          value: "用法：在任務內容後加上 `@名稱`\n說明：名稱一定要與待辦事項裡的人名一致!" 
         },
         {
           name: "注意事項",
@@ -135,9 +124,7 @@ async function sendHelpMessage(channel) {
         },
         {
           name: "✅ 完成任務",
-          value: "用法：對提醒訊息點擊「👍」或回覆 `ok`\n" +
-                 "說明：標記任務為完成並清空試算表中對應行的 B:J 欄。\n" +
-                 "範例：對「⏰ 提醒：值班人員，該執行事項：...」點擊「👍」。"
+          value: "用法：對提醒訊息點擊「👍」或回覆 `ok`\n說明：標記任務為完成並清空試算表。"
         }
       ],
       timestamp: new Date().toISOString()
@@ -180,9 +167,7 @@ client.on("messageCreate", async (message) => {
         const original = await message.channel.messages.fetch(message.reference.messageId);
         const text = original.content || original.embeds?.[0]?.description || "";
         
-        // 抓取提醒事項
         const remindMatched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s*(\d{2}:\d{2})/);
-        // 抓取新增成功事項 (繞過標題，直接鎖定 📅 與 📝)
         const successMatched = text.match(/📅\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s*(\d{2}:\d{2})[\s\S]*?📝\s*([^\n\r]+)/);
 
         if (remindMatched) {
@@ -272,10 +257,9 @@ client.on("messageCreate", async (message) => {
     originalContent: content
   });
 
-  // --- A. 修復 split 錯誤（完全交由 Webhook 發送成功通知） ---
+  // --- A. 修復 split 錯誤（移除 sendNotification） ---
   if (response && response.status === "OK" && response.taskDetails) {
     log(`✅ 收到 GAS 任務詳情：${JSON.stringify(response.taskDetails)}`);
-    // ⚠️ 這裡完全不呼叫 sendNotification，因為 GAS 的 Webhook 已經會幫我們發送了！
   } else {
     log(`❌ GAS 回應無效或任務寫入失敗：${JSON.stringify(response)}`);
     await sendNotification(message.channel, `⚠️ 任務新增失敗：${taskContent}\n請檢查試算表或輸入格式。`);
@@ -308,9 +292,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
     const text = message.content || message.embeds?.[0]?.description || "";
     log(`🔍 嘗試解析訊息內容：\n${text}`);
     
-    // 抓取提醒事項
     const remindMatched = text.match(/事項[：:]\s*「([^」]+?)(?:\s*\（備註：[^\)]+\))?」.*預定於\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s*(\d{2}:\d{2})/);
-    // 抓取新增成功事項 (直接鎖定 📅 與 📝)
     const successMatched = text.match(/📅\s*(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\s*(\d{2}:\d{2})[\s\S]*?📝\s*([^\n\r]+)/);
 
     if (remindMatched) {
